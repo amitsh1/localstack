@@ -1707,6 +1707,128 @@ class TestDynamoDB:
         snapshot.match("TransactGetItems", result)
 
     @markers.aws.validated
+    def test_transact_write_items_with_table_arn(
+        self, dynamodb_create_table_with_parameters, aws_client
+    ):
+        """Test that TransactWriteItems supports table ARNs in the TableName field."""
+        table_name = f"test-ddb-table-{short_uid()}"
+        
+        # Create table and get its ARN
+        response = dynamodb_create_table_with_parameters(
+            TableName=table_name,
+            KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+            ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+        )
+        table_arn = response["TableDescription"]["TableArn"]
+        
+        # Test TransactWriteItems with ARN in TableName field
+        aws_client.dynamodb.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": table_arn,
+                        "Item": {"id": {"S": "test1"}, "data": {"S": "value1"}},
+                    }
+                },
+                {
+                    "ConditionCheck": {
+                        "TableName": table_arn,
+                        "ConditionExpression": "attribute_not_exists(id)",
+                        "Key": {"id": {"S": "test2"}},
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": table_arn,
+                        "Key": {"id": {"S": "test1"}},
+                        "UpdateExpression": "SET #data = :val",
+                        "ExpressionAttributeNames": {"#data": "data"},
+                        "ExpressionAttributeValues": {":val": {"S": "updated"}},
+                    }
+                },
+            ]
+        )
+        
+        # Verify the items were written correctly
+        item = aws_client.dynamodb.get_item(TableName=table_name, Key={"id": {"S": "test1"}})["Item"]
+        assert item["id"]["S"] == "test1"
+        assert item["data"]["S"] == "updated"
+
+    @markers.aws.validated
+    def test_transact_get_items_with_table_arn(
+        self, dynamodb_create_table_with_parameters, aws_client
+    ):
+        """Test that TransactGetItems supports table ARNs in the TableName field."""
+        table_name = f"test-ddb-table-{short_uid()}"
+        
+        # Create table and get its ARN
+        response = dynamodb_create_table_with_parameters(
+            TableName=table_name,
+            KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+            ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+        )
+        table_arn = response["TableDescription"]["TableArn"]
+        
+        # Put an item first
+        aws_client.dynamodb.put_item(
+            TableName=table_name,
+            Item={"id": {"S": "John"}, "age": {"N": "30"}},
+        )
+        
+        # Test TransactGetItems with ARN in TableName field
+        result = aws_client.dynamodb.transact_get_items(
+            TransactItems=[
+                {
+                    "Get": {
+                        "Key": {"id": {"S": "John"}},
+                        "TableName": table_arn,
+                    }
+                }
+            ]
+        )
+        
+        # Verify the result
+        assert len(result["Responses"]) == 1
+        assert result["Responses"][0]["Item"]["id"]["S"] == "John"
+        assert result["Responses"][0]["Item"]["age"]["N"] == "30"
+
+    @markers.aws.validated
+    def test_query_with_table_arn(
+        self, dynamodb_create_table_with_parameters, aws_client
+    ):
+        """Test that Query supports table ARNs in the TableName field."""
+        table_name = f"test-ddb-table-{short_uid()}"
+        
+        # Create table and get its ARN
+        response = dynamodb_create_table_with_parameters(
+            TableName=table_name,
+            KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+            ProvisionedThroughput={"ReadCapacityUnits": 5, "WriteCapacityUnits": 5},
+        )
+        table_arn = response["TableDescription"]["TableArn"]
+        
+        # Put an item
+        aws_client.dynamodb.put_item(
+            TableName=table_name,
+            Item={"id": {"S": "test1"}, "data": {"S": "value1"}},
+        )
+        
+        # Test Query with ARN in TableName field
+        result = aws_client.dynamodb.query(
+            TableName=table_arn,
+            KeyConditionExpression="id = :id",
+            ExpressionAttributeValues={":id": {"S": "test1"}},
+        )
+        
+        # Verify the result
+        assert result["Count"] == 1
+        assert result["Items"][0]["id"]["S"] == "test1"
+        assert result["Items"][0]["data"]["S"] == "value1"
+
+    @markers.aws.validated
     def test_batch_write_items(self, dynamodb_create_table_with_parameters, snapshot, aws_client):
         table_name = f"test-ddb-table-{short_uid()}"
         dynamodb_create_table_with_parameters(
