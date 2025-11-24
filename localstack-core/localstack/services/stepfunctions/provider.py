@@ -611,6 +611,7 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
 
     @staticmethod
     def _get_state_machine_arn_from_qualified_arn(qualified_arn: Arn) -> Arn:
+        """Extract base state machine ARN from a qualified ARN (removes version/alias suffix)."""
         last_colon_index = qualified_arn.rfind(":")
         base_arn = qualified_arn[:last_colon_index]
         return base_arn
@@ -620,6 +621,10 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
     ) -> tuple[StateMachineInstance, Alias | None]:
         """
         Resolve a state machine ARN to a state machine instance, handling aliases if present.
+        
+        Note: This method handles mock test case suffixes (e.g., #TestCase) which are different
+        from version/alias suffixes. The _get_state_machine_arn method removes test case suffixes,
+        while _get_state_machine_arn_from_qualified_arn removes version/alias suffixes.
         
         Args:
             context: Request context
@@ -640,14 +645,16 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
         # Check if the provided ARN (after removing test suffix) is an alias ARN
         # Aliases don't have test case suffixes, so we check base_arn
         alias: Alias | None = None
-        alias_sample_state_machine_version_arn = None
         if self._ALIAS_ARN_REGEX.match(base_arn):
-            # This is an alias ARN, look it up in the aliases store
+            # This is an alias ARN, look it up in the aliases store and sample a version
             alias = store.aliases.get(base_arn)
-            alias_sample_state_machine_version_arn = alias.sample() if alias is not None else None
+            version_arn = alias.sample() if alias is not None else None
+        else:
+            version_arn = None
         
+        # Lookup the state machine using the sampled version (if alias) or the base ARN directly
         unsafe_state_machine: StateMachineInstance | None = store.state_machines.get(
-            alias_sample_state_machine_version_arn or base_arn
+            version_arn or base_arn
         )
         if not unsafe_state_machine:
             self._raise_state_machine_does_not_exist(base_arn)

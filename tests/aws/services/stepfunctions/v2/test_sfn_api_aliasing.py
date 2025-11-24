@@ -1270,7 +1270,7 @@ class TestSfnApiAliasing:
         aws_client,
     ):
         """Test that start_execution works with base ARN even when an alias exists.
-        
+
         This test verifies the fix for issue #13366 where creating an alias
         would break start_execution calls using the base state machine ARN.
         """
