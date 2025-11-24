@@ -802,10 +802,12 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
     ) -> StartExecutionOutput:
         self._validate_state_machine_arn(state_machine_arn)
 
+        # Strip mock test case suffix (e.g., #TestCase) if present, as it's not part of the resource ARN
         base_arn = self._get_state_machine_arn(state_machine_arn)
         store = self.get_store(context=context)
 
-        # Check if the provided ARN is an alias ARN (not a base ARN or version ARN)
+        # Check if the provided ARN (after removing test suffix) is an alias ARN
+        # Aliases don't have test case suffixes, so we check base_arn
         alias: Alias | None = None
         alias_sample_state_machine_version_arn = None
         if self._ALIAS_ARN_REGEX.match(base_arn):
@@ -898,10 +900,12 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
     ) -> StartSyncExecutionOutput:
         self._validate_state_machine_arn(state_machine_arn)
 
+        # Strip mock test case suffix (e.g., #TestCase) if present, as it's not part of the resource ARN
         base_arn = self._get_state_machine_arn(state_machine_arn)
         store = self.get_store(context)
         
-        # Check if the provided ARN is an alias ARN (not a base ARN or version ARN)
+        # Check if the provided ARN (after removing test suffix) is an alias ARN
+        # Aliases don't have test case suffixes, so we check base_arn
         alias: Alias | None = None
         alias_sample_state_machine_version_arn = None
         if self._ALIAS_ARN_REGEX.match(base_arn):
