@@ -626,7 +626,9 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
             state_machine_arn: The ARN which may be a base ARN, version ARN, or alias ARN
             
         Returns:
-            A tuple of (state_machine_instance, alias_or_none)
+            A tuple of (StateMachineInstance, Alias | None) where:
+            - The first element is the resolved state machine instance
+            - The second element is the Alias if an alias ARN was used, None otherwise
             
         Raises:
             StateMachineDoesNotExist: If the state machine or alias doesn't exist
