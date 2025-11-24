@@ -857,7 +857,11 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
                     "type is not ALL",
                 )
 
-        table_name = query_input["TableName"]
+        # Extract table name from ARN if present
+        table_name_or_arn = query_input["TableName"]
+        table_name = extract_table_name_from_arn_or_name(table_name_or_arn)
+        query_input["TableName"] = table_name
+        
         global_table_region = self.get_global_table_region(context, table_name)
         result = self._forward_request(context=context, region=global_table_region)
         self.fix_consumed_capacity(query_input, result)
@@ -865,7 +869,11 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
 
     @handler("Scan", expand=False)
     def scan(self, context: RequestContext, scan_input: ScanInput) -> ScanOutput:
-        table_name = scan_input["TableName"]
+        # Extract table name from ARN if present
+        table_name_or_arn = scan_input["TableName"]
+        table_name = extract_table_name_from_arn_or_name(table_name_or_arn)
+        scan_input["TableName"] = table_name
+        
         global_table_region = self.get_global_table_region(context, table_name)
         result = self._forward_request(context=context, region=global_table_region)
         return result

@@ -65,6 +65,9 @@ def extract_table_name_from_arn_or_name(table_name_or_arn: str) -> str:
     - Table name: "my-table" -> "my-table"
     - Table ARN: "arn:aws:dynamodb:us-east-1:000000000000:table/my-table" -> "my-table"
     
+    The implementation uses the same approach as dynamodb_table_arn() in localstack.utils.aws.arns,
+    which already handles ARN extraction by splitting on ":table/".
+    
     :param table_name_or_arn: either a table name or a table ARN
     :return: the extracted table name
     """
@@ -72,6 +75,7 @@ def extract_table_name_from_arn_or_name(table_name_or_arn: str) -> str:
         return table_name_or_arn
     
     # Check if it looks like an ARN (contains ':table/')
+    # This is the same approach used in dynamodb_table_arn() at line 177 in localstack/utils/aws/arns.py
     if ":table/" in table_name_or_arn:
         # Extract everything after ':table/'
         return table_name_or_arn.split(":table/")[-1]
