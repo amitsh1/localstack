@@ -805,8 +805,14 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
         base_arn = self._get_state_machine_arn(state_machine_arn)
         store = self.get_store(context=context)
 
-        alias: Alias | None = store.aliases.get(base_arn)
-        alias_sample_state_machine_version_arn = alias.sample() if alias is not None else None
+        # Check if the provided ARN is an alias ARN (not a base ARN or version ARN)
+        alias: Alias | None = None
+        alias_sample_state_machine_version_arn = None
+        if self._ALIAS_ARN_REGEX.match(base_arn):
+            # This is an alias ARN, look it up in the aliases store
+            alias = store.aliases.get(base_arn)
+            alias_sample_state_machine_version_arn = alias.sample() if alias is not None else None
+        
         unsafe_state_machine: StateMachineInstance | None = store.state_machines.get(
             alias_sample_state_machine_version_arn or base_arn
         )

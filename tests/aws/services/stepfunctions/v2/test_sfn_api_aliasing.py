@@ -1259,3 +1259,98 @@ class TestSfnApiAliasing:
                 "list_state_machine_aliases_next_token_response",
                 list_state_machine_aliases_response,
             )
+
+    @markers.aws.validated
+    def test_start_execution_with_base_arn_when_alias_exists(
+        self,
+        create_state_machine_iam_role,
+        create_state_machine,
+        create_state_machine_alias,
+        sfn_snapshot,
+        aws_client,
+    ):
+        """Test that start_execution works with base ARN even when an alias exists.
+        
+        This test verifies the fix for issue #13366 where creating an alias
+        would break start_execution calls using the base state machine ARN.
+        """
+        sfn_client = aws_client.stepfunctions
+
+        sfn_role_arn = create_state_machine_iam_role(aws_client)
+        sfn_snapshot.add_transformer(RegexTransformer(sfn_role_arn, "sfn_role_arn"))
+
+        definition = BaseTemplate.load_sfn_template(BaseTemplate.BASE_PASS_RESULT)
+        definition_str = json.dumps(definition)
+
+        state_machine_name = f"state_machine_{short_uid()}"
+        create_state_machine_response = create_state_machine(
+            target_aws_client=aws_client,
+            name=state_machine_name,
+            definition=definition_str,
+            roleArn=sfn_role_arn,
+            publish=True,
+        )
+        sfn_snapshot.add_transformer(
+            sfn_snapshot.transform.sfn_sm_create_arn(create_state_machine_response, 0)
+        )
+
+        state_machine_arn = create_state_machine_response["stateMachineArn"]
+        state_machine_version_arn = create_state_machine_response["stateMachineVersionArn"]
+
+        # Create an alias
+        state_machine_alias_name = f"AliasName-{short_uid()}"
+        sfn_snapshot.add_transformer(
+            RegexTransformer(state_machine_alias_name, "state_machine_alias_name")
+        )
+
+        create_state_machine_alias_response = create_state_machine_alias(
+            target_aws_client=aws_client,
+            description="create state machine alias description",
+            name=state_machine_alias_name,
+            routingConfiguration=[
+                RoutingConfigurationListItem(
+                    stateMachineVersionArn=state_machine_version_arn, weight=100
+                )
+            ],
+        )
+        sfn_snapshot.match(
+            "create_state_machine_alias_response", create_state_machine_alias_response
+        )
+        state_machine_alias_arn = create_state_machine_alias_response["stateMachineAliasArn"]
+
+        await_state_machine_alias_is_created(
+            stepfunctions_client=sfn_client,
+            state_machine_arn=state_machine_arn,
+            state_machine_alias_arn=state_machine_alias_arn,
+        )
+
+        # Test 1: Start execution with alias ARN (should work)
+        start_execution_response_alias = sfn_client.start_execution(
+            stateMachineArn=state_machine_alias_arn, input="{}"
+        )
+        sfn_snapshot.add_transformer(
+            sfn_snapshot.transform.sfn_sm_exec_arn(start_execution_response_alias, 0)
+        )
+        execution_arn_alias = start_execution_response_alias["executionArn"]
+        sfn_snapshot.match("start_execution_response_with_alias", start_execution_response_alias)
+
+        await_execution_terminated(stepfunctions_client=sfn_client, execution_arn=execution_arn_alias)
+
+        # Test 2: Start execution with base ARN (should also work - this is the fix for #13366)
+        start_execution_response_base = sfn_client.start_execution(
+            stateMachineArn=state_machine_arn, input="{}"
+        )
+        sfn_snapshot.add_transformer(
+            sfn_snapshot.transform.sfn_sm_exec_arn(start_execution_response_base, 1)
+        )
+        execution_arn_base = start_execution_response_base["executionArn"]
+        sfn_snapshot.match("start_execution_response_with_base_arn", start_execution_response_base)
+
+        await_execution_terminated(stepfunctions_client=sfn_client, execution_arn=execution_arn_base)
+
+        # Test 3: Verify both executions completed successfully
+        describe_execution_alias = sfn_client.describe_execution(executionArn=execution_arn_alias)
+        sfn_snapshot.match("describe_execution_alias", describe_execution_alias)
+
+        describe_execution_base = sfn_client.describe_execution(executionArn=execution_arn_base)
+        sfn_snapshot.match("describe_execution_base", describe_execution_base)
