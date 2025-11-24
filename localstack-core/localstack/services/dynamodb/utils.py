@@ -57,6 +57,29 @@ def get_ddb_access_key(account_id: str, region_name: str) -> str:
     return f"{account_id}{region_name}".replace("-", "")
 
 
+def extract_table_name_from_arn_or_name(table_name_or_arn: str) -> str:
+    """
+    Extract table name from a DynamoDB table ARN or return the table name if it's not an ARN.
+    
+    This function supports both table names and table ARNs:
+    - Table name: "my-table" -> "my-table"
+    - Table ARN: "arn:aws:dynamodb:us-east-1:000000000000:table/my-table" -> "my-table"
+    
+    :param table_name_or_arn: either a table name or a table ARN
+    :return: the extracted table name
+    """
+    if not table_name_or_arn:
+        return table_name_or_arn
+    
+    # Check if it looks like an ARN (contains ':table/')
+    if ":table/" in table_name_or_arn:
+        # Extract everything after ':table/'
+        return table_name_or_arn.split(":table/")[-1]
+    
+    # Return as-is if it's just a table name
+    return table_name_or_arn
+
+
 class ItemSet:
     """Represents a set of items and provides utils to find individual items in the set"""
 

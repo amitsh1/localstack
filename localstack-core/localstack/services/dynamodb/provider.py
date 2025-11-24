@@ -142,6 +142,7 @@ from localstack.services.dynamodb.utils import (
     ItemSet,
     SchemaExtractor,
     de_dynamize_record,
+    extract_table_name_from_arn_or_name,
     extract_table_name_from_partiql_update,
     get_ddb_access_key,
     modify_ddblocal_arns,
@@ -1198,7 +1199,11 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
                     "type is not ALL",
                 )
 
-        table_name = query_input["TableName"]
+        # Extract table name from ARN if present
+        table_name_or_arn = query_input["TableName"]
+        table_name = extract_table_name_from_arn_or_name(table_name_or_arn)
+        query_input["TableName"] = table_name
+        
         global_table_region = self.get_global_table_region(context, table_name)
         result = self._forward_request(context=context, region=global_table_region)
         self.fix_consumed_capacity(query_input, result)
@@ -1206,7 +1211,11 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
 
     @handler("Scan", expand=False)
     def scan(self, context: RequestContext, scan_input: ScanInput) -> ScanOutput:
-        table_name = scan_input["TableName"]
+        # Extract table name from ARN if present
+        table_name_or_arn = scan_input["TableName"]
+        table_name = extract_table_name_from_arn_or_name(table_name_or_arn)
+        scan_input["TableName"] = table_name
+        
         global_table_region = self.get_global_table_region(context, table_name)
         result = self._forward_request(context=context, region=global_table_region)
         return result
@@ -1321,6 +1330,14 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
         tables_stream_type: dict[TableName, TableStreamType] = {}
         no_stream_tables = set()
 
+        # Extract table names from ARNs if present in TransactItems
+        for item in transact_items:
+            for operation_type in ["Put", "Update", "Delete", "ConditionCheck"]:
+                if operation := item.get(operation_type):
+                    if table_name_or_arn := operation.get("TableName"):
+                        table_name = extract_table_name_from_arn_or_name(table_name_or_arn)
+                        operation["TableName"] = table_name
+
         for item in transact_items:
             item: TransactWriteItem
             for key in ["Put", "Update", "Delete"]:
@@ -1403,6 +1420,12 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
         transact_items: TransactGetItemList,
         return_consumed_capacity: ReturnConsumedCapacity = None,
     ) -> TransactGetItemsOutput:
+        # Extract table names from ARNs if present in TransactItems
+        for item in transact_items:
+            if get_operation := item.get("Get"):
+                if table_name_or_arn := get_operation.get("TableName"):
+                    get_operation["TableName"] = extract_table_name_from_arn_or_name(table_name_or_arn)
+        
         return self.forward_request(context)
 
     @handler("ExecuteTransaction", expand=False)

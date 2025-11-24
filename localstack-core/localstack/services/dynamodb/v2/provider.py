@@ -122,6 +122,7 @@ from localstack.services.dynamodb.models import (
 from localstack.services.dynamodb.server import DynamodbServer
 from localstack.services.dynamodb.utils import (
     SchemaExtractor,
+    extract_table_name_from_arn_or_name,
     get_ddb_access_key,
     modify_ddblocal_arns,
 )
@@ -940,6 +941,15 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
         transact_write_items_input: TransactWriteItemsInput,
     ) -> TransactWriteItemsOutput:
         # TODO: add global table support
+        
+        # Extract table names from ARNs if present in TransactItems
+        transact_items = transact_write_items_input.get("TransactItems", [])
+        for item in transact_items:
+            for operation_type in ["Put", "Update", "Delete", "ConditionCheck"]:
+                if operation := item.get(operation_type):
+                    if table_name := operation.get("TableName"):
+                        operation["TableName"] = extract_table_name_from_arn_or_name(table_name)
+        
         client_token: str | None = transact_write_items_input.get("ClientRequestToken")
 
         if client_token:
@@ -956,6 +966,12 @@ class DynamoDBProvider(DynamodbApi, ServiceLifecycleHook):
         transact_items: TransactGetItemList,
         return_consumed_capacity: ReturnConsumedCapacity = None,
     ) -> TransactGetItemsOutput:
+        # Extract table names from ARNs if present in TransactItems
+        for item in transact_items:
+            if get_operation := item.get("Get"):
+                if table_name := get_operation.get("TableName"):
+                    get_operation["TableName"] = extract_table_name_from_arn_or_name(table_name)
+        
         return self.forward_request(context)
 
     @handler("ExecuteTransaction", expand=False)
