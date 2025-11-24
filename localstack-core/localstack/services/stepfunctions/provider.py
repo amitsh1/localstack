@@ -615,6 +615,43 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
         base_arn = qualified_arn[:last_colon_index]
         return base_arn
 
+    def _resolve_state_machine_or_alias(
+        self, context: RequestContext, state_machine_arn: Arn
+    ) -> tuple[StateMachineInstance, Alias | None]:
+        """
+        Resolve a state machine ARN to a state machine instance, handling aliases if present.
+        
+        Args:
+            context: Request context
+            state_machine_arn: The ARN which may be a base ARN, version ARN, or alias ARN
+            
+        Returns:
+            A tuple of (state_machine_instance, alias_or_none)
+            
+        Raises:
+            StateMachineDoesNotExist: If the state machine or alias doesn't exist
+        """
+        # Strip mock test case suffix (e.g., #TestCase) if present, as it's not part of the resource ARN
+        base_arn = self._get_state_machine_arn(state_machine_arn)
+        store = self.get_store(context=context)
+
+        # Check if the provided ARN (after removing test suffix) is an alias ARN
+        # Aliases don't have test case suffixes, so we check base_arn
+        alias: Alias | None = None
+        alias_sample_state_machine_version_arn = None
+        if self._ALIAS_ARN_REGEX.match(base_arn):
+            # This is an alias ARN, look it up in the aliases store
+            alias = store.aliases.get(base_arn)
+            alias_sample_state_machine_version_arn = alias.sample() if alias is not None else None
+        
+        unsafe_state_machine: StateMachineInstance | None = store.state_machines.get(
+            alias_sample_state_machine_version_arn or base_arn
+        )
+        if not unsafe_state_machine:
+            self._raise_state_machine_does_not_exist(base_arn)
+        
+        return unsafe_state_machine, alias
+
     def create_state_machine_alias(
         self,
         context: RequestContext,
@@ -802,24 +839,11 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
     ) -> StartExecutionOutput:
         self._validate_state_machine_arn(state_machine_arn)
 
-        # Strip mock test case suffix (e.g., #TestCase) if present, as it's not part of the resource ARN
-        base_arn = self._get_state_machine_arn(state_machine_arn)
-        store = self.get_store(context=context)
-
-        # Check if the provided ARN (after removing test suffix) is an alias ARN
-        # Aliases don't have test case suffixes, so we check base_arn
-        alias: Alias | None = None
-        alias_sample_state_machine_version_arn = None
-        if self._ALIAS_ARN_REGEX.match(base_arn):
-            # This is an alias ARN, look it up in the aliases store
-            alias = store.aliases.get(base_arn)
-            alias_sample_state_machine_version_arn = alias.sample() if alias is not None else None
-        
-        unsafe_state_machine: StateMachineInstance | None = store.state_machines.get(
-            alias_sample_state_machine_version_arn or base_arn
+        # Resolve the state machine, handling aliases if present
+        unsafe_state_machine, alias = self._resolve_state_machine_or_alias(
+            context=context, state_machine_arn=state_machine_arn
         )
-        if not unsafe_state_machine:
-            self._raise_state_machine_does_not_exist(base_arn)
+        store = self.get_store(context=context)
 
         # Update event change parameters about the state machine and should not affect those about this execution.
         state_machine_clone = copy.deepcopy(unsafe_state_machine)
@@ -900,24 +924,10 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
     ) -> StartSyncExecutionOutput:
         self._validate_state_machine_arn(state_machine_arn)
 
-        # Strip mock test case suffix (e.g., #TestCase) if present, as it's not part of the resource ARN
-        base_arn = self._get_state_machine_arn(state_machine_arn)
-        store = self.get_store(context)
-        
-        # Check if the provided ARN (after removing test suffix) is an alias ARN
-        # Aliases don't have test case suffixes, so we check base_arn
-        alias: Alias | None = None
-        alias_sample_state_machine_version_arn = None
-        if self._ALIAS_ARN_REGEX.match(base_arn):
-            # This is an alias ARN, look it up in the aliases store
-            alias = store.aliases.get(base_arn)
-            alias_sample_state_machine_version_arn = alias.sample() if alias is not None else None
-        
-        unsafe_state_machine: StateMachineInstance | None = store.state_machines.get(
-            alias_sample_state_machine_version_arn or base_arn
+        # Resolve the state machine, handling aliases if present
+        unsafe_state_machine, alias = self._resolve_state_machine_or_alias(
+            context=context, state_machine_arn=state_machine_arn
         )
-        if not unsafe_state_machine:
-            self._raise_state_machine_does_not_exist(base_arn)
 
         if unsafe_state_machine.sm_type == StateMachineType.STANDARD:
             self._raise_state_machine_type_not_supported()
